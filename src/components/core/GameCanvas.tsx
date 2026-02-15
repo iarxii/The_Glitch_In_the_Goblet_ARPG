@@ -3,6 +3,7 @@ import { Stats, OrbitControls } from '@react-three/drei';
 import { Suspense, type ReactNode } from 'react';
 import { GameLoop } from './GameLoop';
 import { SceneLighting } from './SceneLighting';
+import { CameraFollow } from '../game/CameraFollow';
 
 interface GameCanvasProps {
     children?: ReactNode;
@@ -24,7 +25,8 @@ export function GameCanvas({ children }: GameCanvasProps) {
             <Suspense fallback={null}>
                 <SceneLighting />
                 <GameLoop />
-                <OrbitControls />
+                <CameraFollow />
+                <OrbitControls makeDefault />
                 {children}
                 {import.meta.env.DEV && <Stats />}
             </Suspense>

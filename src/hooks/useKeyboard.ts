@@ -1,32 +1,61 @@
-import { useCallback, useEffect, useRef } from 'react';
+import { useEffect, useState } from 'react';
 
-/**
- * useKeyboard
- * -----------
- * Tracks which keys are currently pressed.
- * Returns a stable `isKeyDown(key)` function.
- *
- * @example
- *   const isKeyDown = useKeyboard();
- *   useFrame(() => {
- *     if (isKeyDown('KeyW')) moveForward();
- *   });
- */
-export function useKeyboard() {
-    const keys = useRef<Set<string>>(new Set());
+export interface KeyboardState {
+    forward: boolean;
+    backward: boolean;
+    left: boolean;
+    right: boolean;
+    jump: boolean;
+    sprint: boolean;
+}
+
+const keyMap: { [key: string]: keyof KeyboardState } = {
+    KeyW: 'forward',
+    ArrowUp: 'forward',
+    KeyS: 'backward',
+    ArrowDown: 'backward',
+    KeyA: 'left',
+    ArrowLeft: 'left',
+    KeyD: 'right',
+    ArrowRight: 'right',
+    Space: 'jump',
+    ShiftLeft: 'sprint',
+    ShiftRight: 'sprint',
+};
+
+export function useKeyboard(): KeyboardState {
+    const [movement, setMovement] = useState<KeyboardState>({
+        forward: false,
+        backward: false,
+        left: false,
+        right: false,
+        jump: false,
+        sprint: false,
+    });
 
     useEffect(() => {
-        const onDown = (e: KeyboardEvent) => keys.current.add(e.code);
-        const onUp = (e: KeyboardEvent) => keys.current.delete(e.code);
+        const handleKeyDown = (e: KeyboardEvent) => {
+            const action = keyMap[e.code];
+            if (action) {
+                setMovement((prev) => ({ ...prev, [action]: true }));
+            }
+        };
 
-        window.addEventListener('keydown', onDown);
-        window.addEventListener('keyup', onUp);
+        const handleKeyUp = (e: KeyboardEvent) => {
+            const action = keyMap[e.code];
+            if (action) {
+                setMovement((prev) => ({ ...prev, [action]: false }));
+            }
+        };
+
+        window.addEventListener('keydown', handleKeyDown);
+        window.addEventListener('keyup', handleKeyUp);
+
         return () => {
-            window.removeEventListener('keydown', onDown);
-            window.removeEventListener('keyup', onUp);
+            window.removeEventListener('keydown', handleKeyDown);
+            window.removeEventListener('keyup', handleKeyUp);
         };
     }, []);
 
-    const isKeyDown = useCallback((code: string) => keys.current.has(code), []);
-    return isKeyDown;
+    return movement;
 }
