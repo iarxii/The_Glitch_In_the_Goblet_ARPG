@@ -1,0 +1,28 @@
+:root {
+  /* Polytonia color palette */
+  --color-bg: #0f0f1a;
+  --color-surface: #1a1a2e;
+  --color-primary: #6366f1;
+  --color-accent: #22d3ee;
+  --color-text: #e2e8f0;
+  --color-danger: #ef4444;
+}
+
+*,
+*::before,
+*::after {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: 'Courier New', Courier, monospace;
+}
