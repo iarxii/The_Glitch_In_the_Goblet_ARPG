@@ -1,36 +1,51 @@
 import { useFrame, useThree } from '@react-three/fiber';
 import { useGameStore } from '../../store/useGameStore';
-import * as THREE from 'three';
-import { useRef } from 'react';
-import type { OrbitControls as OrbitControlsImpl } from 'three-stdlib';
+import { Vector3 } from 'three';
+import { OrbitControls as OrbitControlsImpl } from 'three-stdlib';
+import type { MutableRefObject } from 'react';
 
-export function CameraFollow() {
-    const playerPos = useGameStore((s) => s.player.position);
-    const { camera, controls } = useThree();
+/**
+ * CameraFollow
+ * ------------
+ * Updates the camera position and correct OrbitControls target 
+ * to follow the player smoothly.
+ */
+export function CameraFollow({ controlsRef }: { controlsRef: MutableRefObject<OrbitControlsImpl | null> }) {
+    const { camera } = useThree();
+    const playerPos = useGameStore((state) => state.player.position);
 
     // Store previous player position to calculate delta
-    const prevPlayerPos = useRef(new THREE.Vector3(...playerPos));
+    // Actually simpler: Determine desired target position and existing offset.
+    // Ideally OrbitControls.target should match Player Position.
+    // If we move OrbitControls.target, and we want to keep the same relative camera offset,
+    // we must also move the camera by the same delta.
 
-    useFrame((_state, _delta) => {
-        if (!controls) return;
+    // If controls are enabled, they manage camera position based on target + spherical coords.
+    // So we just need to update controls.target!
+    // OrbitControls will handle moving the camera if it's in 'update' loop.
+    // By default OrbitControls updates camera position based on target.
 
-        const orbit = controls as unknown as OrbitControlsImpl;
-        const target = new THREE.Vector3(...playerPos);
+    useFrame(() => {
+        if (!controlsRef.current) return;
 
-        // Calculate how much player moved
-        const displacement = target.clone().sub(prevPlayerPos.current);
+        const target = controlsRef.current.target;
+        const pVector = new Vector3(...playerPos);
 
-        // Move camera by same amount to maintain relative offset
-        camera.position.add(displacement);
+        // Smooth follow logic could go here (lerp)
+        // For classic ARPG, instant lock is often preferred, or very fast lerp.
+        // Let's use direct assignment for "locked" feel first.
 
-        // Update control target to look at player
-        orbit.target.copy(target);
+        // Calculate constant offset?
+        // No, current camera position is derived from target + rotation/zoom.
+        // If we change target, we want to shift camera by same amount (pVector - target).
 
-        // Update controls
-        orbit.update();
+        const delta = pVector.clone().sub(target);
 
-        // Sync ref
-        prevPlayerPos.current.copy(target);
+        if (delta.lengthSq() > 0.0001) {
+            camera.position.add(delta);
+            controlsRef.current.target.copy(pVector);
+            controlsRef.current.update();
+        }
     });
 
     return null;

@@ -28,6 +28,10 @@ export interface GameState {
     setPlayerPosition: (pos: [number, number, number]) => void;
     damagePlayer: (amount: number) => void;
     healPlayer: (amount: number) => void;
+    showAimIndicator: boolean;
+    toggleAimIndicator: () => void;
+    targetPosition: [number, number, number] | null;
+    setTargetPosition: (pos: [number, number, number] | null) => void;
     collectLoot: (type: 'optimizationOrbs' | 'dataFragments' | 'textureShards', amount?: number) => void;
     resetGame: () => void;
 }
@@ -54,7 +58,14 @@ export const useGameStore = create<GameState>()(
         (set) => ({
             elapsedTime: 0,
             isPaused: false,
+            showAimIndicator: true, // Default on
+            targetPosition: null, // No target initially
             player: { ...initialPlayerState },
+
+            toggleAimIndicator: () =>
+                set((state) => ({ showAimIndicator: !state.showAimIndicator }), false, 'toggleAimIndicator'),
+
+            setTargetPosition: (pos) => set({ targetPosition: pos }, false, 'setTargetPosition'),
 
             tick: (delta) =>
                 set(
