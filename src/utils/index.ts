@@ -1,1 +1,3 @@
-export { clamp, lerp, degToRad, randomRange } from './math';
+export * from './math';
+export * from './rng';
+export * from './noise';
