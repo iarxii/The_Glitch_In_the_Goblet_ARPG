@@ -12,7 +12,6 @@ import type { MutableRefObject } from 'react';
  */
 export function CameraFollow({ controlsRef }: { controlsRef: MutableRefObject<OrbitControlsImpl | null> }) {
     const { camera } = useThree();
-    const playerPos = useGameStore((state) => state.player.position);
 
     // Store previous player position to calculate delta
     // Actually simpler: Determine desired target position and existing offset.
@@ -29,6 +28,7 @@ export function CameraFollow({ controlsRef }: { controlsRef: MutableRefObject<Or
         if (!controlsRef.current) return;
 
         const target = controlsRef.current.target;
+        const playerPos = useGameStore.getState().player.position;
         const pVector = new Vector3(...playerPos);
 
         // Smooth follow logic could go here (lerp)

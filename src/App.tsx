@@ -1,6 +1,7 @@
 import { GameCanvas } from './components/core';
-import { Player, World } from './components/game';
+import { World } from './components/game';
 import { Hud } from './components/ui';
+import { TelemetryProvider } from './components/core/TelemetryProvider';
 
 /**
  * App – root component
@@ -14,12 +15,11 @@ import { Hud } from './components/ui';
  */
 export default function App() {
   return (
-    <>
+    <TelemetryProvider>
       <Hud />
       <GameCanvas>
         <World />
-        <Player />
       </GameCanvas>
-    </>
+    </TelemetryProvider>
   );
 }

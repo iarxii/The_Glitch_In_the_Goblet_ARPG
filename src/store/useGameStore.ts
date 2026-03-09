@@ -21,6 +21,12 @@ export interface GameState {
     isPaused: boolean;
     /** Player state */
     player: PlayerState;
+    /** Current Level */
+    level: number;
+    /** Current Level Seed */
+    levelSeed: string;
+    /** True if chunks have loaded */
+    isTerrainLoaded: boolean;
 
     // -- Actions --
     tick: (delta: number) => void;
@@ -33,7 +39,9 @@ export interface GameState {
     targetPosition: [number, number, number] | null;
     setTargetPosition: (pos: [number, number, number] | null) => void;
     collectLoot: (type: 'optimizationOrbs' | 'dataFragments' | 'textureShards', amount?: number) => void;
+    advanceLevel: () => void;
     resetGame: () => void;
+    setTerrainLoaded: (loaded: boolean) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -60,7 +68,12 @@ export const useGameStore = create<GameState>()(
             isPaused: false,
             showAimIndicator: true, // Default on
             targetPosition: null, // No target initially
+            level: 1,
+            levelSeed: 'glitch-goblet-seed-3d',
+            isTerrainLoaded: false,
             player: { ...initialPlayerState },
+
+            setTerrainLoaded: (loaded) => set({ isTerrainLoaded: loaded }, false, 'setTerrainLoaded'),
 
             toggleAimIndicator: () =>
                 set((state) => ({ showAimIndicator: !state.showAimIndicator }), false, 'toggleAimIndicator'),
@@ -124,9 +137,22 @@ export const useGameStore = create<GameState>()(
                     'collectLoot',
                 ),
 
+            advanceLevel: () =>
+                set(
+                    (state) => ({
+                        level: state.level + 1,
+                        levelSeed: `glitch-seed-${state.level + 1}-${Math.random()}`,
+                        targetPosition: null, // clear target so player doesn't run automatically
+                        isTerrainLoaded: false,
+                        player: { ...state.player, position: [0, 10, 0] } // teleport back above to drop
+                    }),
+                    false,
+                    'advanceLevel',
+                ),
+
             resetGame: () =>
                 set(
-                    { elapsedTime: 0, isPaused: false, player: { ...initialPlayerState } },
+                    { elapsedTime: 0, isPaused: false, level: 1, levelSeed: 'glitch-goblet-seed-3d', isTerrainLoaded: false, player: { ...initialPlayerState, position: [0, 10, 0] } },
                     false,
                     'resetGame',
                 ),

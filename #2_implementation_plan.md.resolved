@@ -1,0 +1,55 @@
+# Implementation Plan: World Generation & Aesthetics Redesign
+
+This document outlines the approach for redesigning the WorldGen system to support vertical dungeons, interconnected levels, high-performance rendering/physics, and a distinct visual style through accessible shaders.
+
+## User Review Required
+
+> [!IMPORTANT]  
+> Please review the chosen **Dungeon Algorithm** (Section 1) and the **Shader Strategy** (Section 3). I have proposed a Voxel/Block-based chunking system combined with 3D Noise for verticality and `drei/Instances` for performance. Does this align with your vision, or did you prefer continuous, smooth terrain (marching cubes)?
+
+## Proposed Changes
+
+### 1. World Generation Algorithm (Dungeons with Verticality)
+Instead of a simple flat plane with scattered objects, we will pivot to a **Voxel/Grid-based Chunk System** enhanced by 3-dimensional noise or layered 2D noise.
+
+*   **Algorithm:** Hybrid Cellular Automata / 3D Noise (like Simplex). We will evaluate a 3D grid in chunks. If the noise density function at [(x, y, z)](file:///c:/AppDev/The_Glitch_In_the_Goblet_ARPG/src/store/useGameStore.ts#70-76) exceeds a threshold, it's solid space (wall/floor). This naturally formulates caves, overhangs, and vertical shafts.
+*   **Entry/Exit Points:** Special nodes injected into the lowest and highest traversable points in a generated biome. Reaching an 'Exit Portal' will dispatch an event to the global Zustand store to increment the `currentLevel` index and trigger a new seed generation, maintaining player stats across levels.
+
+### 2. High-Performance Rendering & Physics
+React Three Fiber performance plummets if we render thousands of individual `<mesh>` nodes for a large dungeon.
+*   **InstancedMesh (Rendering):** We will use Three.js `InstancedMesh` (or the `@react-three/drei` `<Instances>` abstraction). This allows us to render thousands of floor/wall blocks in a single draw call.
+*   **Physics Colliders:** Physics engines choke on thousands of individual block colliders. We will implement `Collider merging` per chunk. Alternatively, for strict block terrain, we can generate a simplified Hull or use `@react-three/rapier`'s `Heightfield` if we restrict extreme vertical caves, or just use optimized `CuboidCollider`s combined heavily only where the player is currently occupying (physics LOD). We will go with dynamic bounding box merging for solid areas within the active chunk.
+
+### 3. Aesthetics & Simple Shaders
+Creating a cohesive, premium look without writing 1000 lines of GLSL.
+*   **Color Palettes:** Utilize strict HSL color palettes (e.g., Deep Indigo/Violet gradients for corruption, Cyan/Teal for safe zones) managed via CSS/Zustand themes.
+*   **Node-Material / onBeforeCompile:** Instead of raw ShaderMaterials from scratch, we will hook into standard materials using `onBeforeCompile` to inject localized vertex displacement (e.g., wobbling trees, breathing alien flora) and fragment adjustments (e.g., distance-based color banding).
+*   **Drei Abstractions:** Rely on `<MeshTransmissionMaterial>` for glass/portals, `<Environment>` for stylized lighting, and `<EffectComposer>` for lightweight post-processing (Bloom, Vignette).
+
+### 4. Code & Documentation Structure
+We will expand the codebase as follows:
+
+```diff
+  src/
+  ├── components/
++ │   ├── shaders/           # Reusable material hooks (e.g., useGlitchShader)
++ │   ├── world/             # Components handling Instances and Physics wrappers
+  ├── systems/
++ │   ├── WorldGen3D.ts      # The math for vertical, 3D noise volumetric generation
++ │   ├── LevelManager.ts    # Oversees transitions, seeds, and unloading chunks
+  docs/
++ ├── worldgen.md            # Deep dive into the 3D density algorithms
++ ├── shaders.md             # Guide on how to tweak the custom materials
+```
+
+## Verification Plan
+
+### Automated Tests
+- Unit test the `WorldGen3D` density function to ensure deterministic outputs based on a seed.
+- Verify `LevelManager` correctly transitions states in the Zustand store without memory leaks.
+
+### Manual Verification
+1. Render a chunk size of 32x32x32 blocks and verify 60FPS using InstancedMesh.
+2. Confirm physics rigid bodies allow jumping, falling, and colliding with vertical walls.
+3. Visually inspect the shader aesthetics (lighting, color palette, custom vertex displacement) to ensure a premium look.
+4. Test the Portal (Exit/Entry) flow by walking into an exit and verifying the scene fully repopulates with a new seed/dungeon.

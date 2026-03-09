@@ -1,0 +1,36 @@
+# Phase 3: Performance Telemetry & Fixes
+
+## Problem Analysis (The 1 FPS Issue)
+While we replaced thousands of React `CuboidCollider` components with a single `<InstancedRigidBodies>` wrapper, Rapier is *still* simulating thousands of individual physical cube colliders per chunk under the hood. Furthermore, making [GlitchMaterial](file:///c:/AppDev/The_Glitch_In_the_Goblet_ARPG/src/components/shaders/GlitchMaterial.tsx#13-88) transparent introduces severe GPU overdraw and depth-sorting penalties when applied to thousands of instances.
+
+## 1. Agentic Performance Testing Pipeline
+To allow the AI to autonomously benchmark and diagnose the app, we will build a headless-compatible telemetry pipeline:
+
+### A. The Telemetry System (Frontend)
+1.  **React Profiler Integration:** Wrap critical components ([Chunk](file:///c:/AppDev/The_Glitch_In_the_Goblet_ARPG/src/components/world/Chunk.tsx#15-106), [World](file:///c:/AppDev/The_Glitch_In_the_Goblet_ARPG/src/components/game/World.tsx#11-72), [Player](file:///c:/AppDev/The_Glitch_In_the_Goblet_ARPG/src/components/game/Player.tsx#12-124)) in React's `<Profiler>` API.
+2.  **FPS & Memory Hooks:** Create a custom `useTelemetry` hook that samples `useFrame` delta times to calculate average FPS and frame drops.
+3.  **Data Export:** Instead of just logging to the console (which can be hard for an agent to parse continuously), the telemetry system will batch metrics every 5 seconds and `POST` them to a simple local API endpoint, or alternatively, render a hidden JSON `<div>` in the DOM containing the latest stats.
+
+### B. The Automated Profiler (Agent Side)
+1.  Since the agent has access to a `browser_subagent`, the agent can autonomously spin up a headless browser session navigating to `http://localhost:5173`.
+2.  The subagent will be instructed to read the hidden Telemetry DOM node or intercept console logs.
+3.  The subagent reports the exact FPS, render times, and physics times back to the main agent for analysis.
+
+## 2. Immediate Performance Fixes
+Before we run the profiler, there are two distinct bottlenecks we need to fix:
+
+### A. Physics: Greedy Meshing for Colliders
+Instead of generating 4,000 1x1x1 colliders per chunk, we will implement a basic 1D or 2D Greedy Meshing algorithm.
+*   The algorithm will scan the chunk data and merge adjacent solid blocks along the X or Z axis into large rectangles.
+*   A single chunk might drop from 4,096 colliders down to ~200, drastically freeing up the CPU.
+*   *Note: We only do this for the physics colliders. The visuals can remain a single `InstancedMesh` of 1x1x1 cubes since the GPU handles instancing efficiently, provided transparency is turned off.*
+
+### B. Rendering: Opaque Materials
+*   Remove `transparent=true` from the base terrain [GlitchMaterial](file:///c:/AppDev/The_Glitch_In_the_Goblet_ARPG/src/components/shaders/GlitchMaterial.tsx#13-88). Transparent instanced meshes destroy fill-rate.
+*   If we need camera dithering/fading, we should use a `customDepthMaterial` or completely avoid transparency unless strictly necessary.
+
+## Proposed Implementation Steps
+1. [MODIFY] [src/components/world/Chunk.tsx](file:///c:/AppDev/The_Glitch_In_the_Goblet_ARPG/src/components/world/Chunk.tsx) - Implement Greedy Meshing for the Rapier bounding boxes. Remove transparency from [GlitchMaterial](file:///c:/AppDev/The_Glitch_In_the_Goblet_ARPG/src/components/shaders/GlitchMaterial.tsx#13-88).
+2. [NEW] `src/utils/telemetry.ts` - Create the data aggregator.
+3. [NEW] `src/components/core/TelemetryProvider.tsx` - Inject React `<Profiler>` and the `useFrame` FPS counter.
+4. [MODIFY] [src/App.tsx](file:///c:/AppDev/The_Glitch_In_the_Goblet_ARPG/src/App.tsx) - Wrap the app in the TelemetryProvider to expose DOM metrics.

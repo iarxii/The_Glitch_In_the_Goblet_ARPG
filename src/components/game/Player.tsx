@@ -1,4 +1,4 @@
-import { useRef, useState, useEffect } from 'react';
+import { useRef, useEffect } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { Group, Vector3 } from 'three';
 import { useKeyboard } from '../../hooks/useKeyboard';
@@ -6,29 +6,20 @@ import { useMousePosition } from '../../hooks/useMousePosition';
 import { useGameStore } from '../../store/useGameStore';
 import { PHYSICS } from '../../systems/Physics';
 import { AimIndicator } from './AimIndicator';
+import { RigidBody, RapierRigidBody, CapsuleCollider } from '@react-three/rapier';
+import { GlitchMaterial } from '../shaders/GlitchMaterial';
 
-/**
- * Player
- * ------
- * Implements a kinematic character controller.
- * Handles input, physics, and state synchronization.
- * Uses a Group wrapper to separate logic from visual rotation.
- */
 export function Player() {
     const groupRef = useRef<Group>(null);
+    const rbRef = useRef<RapierRigidBody>(null);
     const input = useKeyboard();
     const mousePos = useMousePosition();
 
-    // Optimized selectors to avoid infinite re-renders
     const setPlayerPosition = useGameStore((s) => s.setPlayerPosition);
     const showAimIndicator = useGameStore((s) => s.showAimIndicator);
     const toggleAimIndicator = useGameStore((s) => s.toggleAimIndicator);
     const targetPosition = useGameStore((s) => s.targetPosition);
     const setTargetPosition = useGameStore((s) => s.setTargetPosition);
-
-    // Physics state
-    const [velocity] = useState(new Vector3(0, 0, 0));
-    const [isGrounded, setIsGrounded] = useState(false);
 
     // Toggle Aim Binding
     useEffect(() => {
@@ -56,143 +47,77 @@ export function Player() {
         return () => window.removeEventListener('pointerdown', handlePointerDown);
     }, [setTargetPosition]);
 
-    useFrame((_state, delta) => {
-        if (!groupRef.current) return;
+    useFrame(() => {
+        if (!groupRef.current || !rbRef.current) return;
 
-        const playerPos = groupRef.current.position;
+        const rbPos = rbRef.current.translation();
+        const playerPos = new Vector3(rbPos.x, rbPos.y, rbPos.z);
 
         // Rotate ENTIRE GROUP to face mouse
         if (mousePos) {
-            // target point at player's height to allow flat rotation
-            const lookTarget = new Vector3(mousePos.x, playerPos.y, mousePos.z);
+            const lookTarget = new Vector3(mousePos.x, groupRef.current.position.y, mousePos.z);
             groupRef.current.lookAt(lookTarget);
         }
 
-        // 0. Handle Click to Move
-        // We need to capture click. Since this is useFrame, we can't add event listener here repeatedly.
-        // But we can check input.
-
-        // 1. Handle Input (Movement)
         const speed = input.sprint ? PHYSICS.MOVE_SPEED * PHYSICS.SPRINT_MULTIPLIER : PHYSICS.MOVE_SPEED;
         const moveDir = new Vector3();
 
-        // Manual Input Overrides Click-to-Move
         if (input.forward || input.backward || input.left || input.right) {
-            if (targetPosition) setTargetPosition(null); // Cancel target
+            if (targetPosition) setTargetPosition(null);
 
             if (input.forward) moveDir.z -= 1;
             if (input.backward) moveDir.z += 1;
             if (input.left) moveDir.x -= 1;
             if (input.right) moveDir.x += 1;
         } else if (targetPosition) {
-            // Autonomous Movement towards Target
-            const target = new Vector3(...targetPosition);
-            const currentPos = new Vector3(playerPos.x, playerPos.y, playerPos.z);
-            const dist = currentPos.distanceTo(target);
+            const target = new Vector3(targetPosition[0], playerPos.y, targetPosition[2]);
+            const dist = playerPos.distanceTo(target);
 
-            if (dist > 0.1) {
-                moveDir.copy(target).sub(currentPos).normalize();
-                // Face movement direction if moving autonomously?
-                // Or still face mouse?
-                // User said "face mouse for forward direction".
-                // Usually click-to-move implies facing target.
-                // But aim implies mouse.
-                // If I click to move, do I aim at target?
-                // Let's assume Aim (Mouse) takes precedence for Rotation, but Movement is towards target.
-                // Or should we rotate to target if no mouse input? Mouse is always there.
-                // "The player should follow the mouse for forward direction" -> aimed movement?
-                // But click-to-move is usually independent of aim in top-down shooters, OR aim IS movement.
-                // User said "face mouse for forward direction" previously.
-                // I will keep Rotation locked to Mouse. Movement towards Target.
-                // This allows strafing/kiting behavior (move to point, shoot at mouse).
+            if (dist > 0.5) {
+                moveDir.copy(target).sub(playerPos).normalize();
             } else {
-                setTargetPosition(null); // Reached
+                setTargetPosition(null);
             }
         }
 
-        // Normalize and apply speed
         if (moveDir.length() > 0) {
-            moveDir.normalize().multiplyScalar(speed * delta);
+            moveDir.normalize().multiplyScalar(speed);
         }
 
-        // Apply movement (Absolute World Coordinates: WSAD = NSEW)
-        if (moveDir.length() > 0) {
-            playerPos.x += moveDir.x;
-            playerPos.z += moveDir.z;
+        // Keep current vertical velocity to allow gravity to work
+        const currentVel = rbRef.current.linvel();
+        let newVelY = currentVel.y;
+
+        if (input.jump && Math.abs(currentVel.y) < 0.1) {
+            newVelY = PHYSICS.JUMP_FORCE;
         }
 
-        // 2. Handle Physics (Gravity & Jumping)
+        rbRef.current.setLinvel({ x: moveDir.x, y: newVelY, z: moveDir.z }, true);
 
-        // Apply Gravity
-        velocity.y -= PHYSICS.GRAVITY * delta;
-
-        // Jump
-        if (input.jump && isGrounded) {
-            velocity.y = PHYSICS.JUMP_FORCE;
-            setIsGrounded(false);
-        }
-
-        // Apply Velocity to Position (Y-axis)
-        playerPos.y += velocity.y * delta;
-
-        // 3. Ground Collision (Simple flat plane at GROUND_Y)
-        const halfHeight = 0.5; // Box geometry arg [1,1,1]
-        const groundLevel = PHYSICS.GROUND_Y + halfHeight;
-
-        if (playerPos.y <= groundLevel) {
-            playerPos.y = groundLevel;
-            velocity.y = 0;
-            if (!isGrounded) setIsGrounded(true);
-        } else {
-            if (isGrounded) setIsGrounded(false);
-        }
-
-        // 4. Sync State
-        setPlayerPosition([playerPos.x, playerPos.y, playerPos.z]);
+        // Sync State
+        setPlayerPosition([rbPos.x, rbPos.y, rbPos.z]);
     });
 
     return (
-        <group ref={groupRef} position={[0, 0.5, 0]}>
-            {/* Visual Mesh with Rotation Correction */}
-            {/* Rotate 180 degrees (Math.PI) around Y because lookAt points +Z, but our "Front" was -Z */}
-            <mesh rotation-y={Math.PI} castShadow>
-                <boxGeometry args={[1, 1, 1]} />
-                <meshStandardMaterial color={isGrounded ? "#00d4ff" : "#ff0000"} />
-
-                {/* Direction Indicator (White Box) - Represents "Face" */}
-                {/* Since we rotate Mesh 180, this -0.4 Z becomes +0.4 Z in Group Space? */}
-                {/* No, Mesh is rotated. Local -0.4Z inside Mesh -> Rotated 180 -> +0.4Z in Group. */}
-                {/* Group looks at Target (+Z). So +0.4Z points at Target. Correct. */}
-                <mesh position={[0, 0, -0.4]} scale={0.2}>
-                    <boxGeometry />
-                    <meshStandardMaterial color="white" />
+        <RigidBody ref={rbRef} colliders={false} type="dynamic" position={[10, 20, 10]} enabledRotations={[false, false, false]}>
+            <CapsuleCollider args={[0.25, 0.5]} position={[0, 0.75, 0]} />
+            <group ref={groupRef} position={[0, 0.5, 0]}>
+                <mesh rotation-y={Math.PI}>
+                    <boxGeometry args={[1, 1, 1]} />
+                    <GlitchMaterial color={"#00d4ff"} wobbleAmount={0.1} wobbleSpeed={3.0} />
+                    <mesh position={[0, 0, -0.4]} scale={0.2}>
+                        <boxGeometry />
+                        <GlitchMaterial color="white" wobbleAmount={0.0} />
+                    </mesh>
                 </mesh>
-            </mesh>
 
-            {showAimIndicator && mousePos && (
-                // AimIndicator is inside Group. [0,0,0] is Player Center.
-                // mousePos is World Coord. 
-                // We need relative coords for Line if it acts in local space?
-                // Drei Line points are world space by default? No, usually local to parent.
-                // If Line uses buffer geometry, it's local.
-                // So end point should be (mousePos - playerPos).
-                // But rotating Group rotates the Line too!
-                // If we draw line to (Target - Pos), and Group is looking at Target...
-                // Then (Target - Pos) is a vector along Z axis (length D).
-                // So end point should be [0, 0, Distance].
-                // Let's calculate distance.
-                // OR: Put AimIndicator outside group? No, cleanest is inside but use local logic.
-                <AimIndicator
-                    start={new Vector3(0, 0, 0)}
-                    // Calculate relative position of mouse in rotated group space
-                    // Actually, simpler: Use inverse rotation?
-                    // Or just use distance.
-                    end={
-                        new Vector3(0, 0, groupRef.current?.position.distanceTo(mousePos) || 0)
-                    }
-                />
-            )}
-
-        </group>
+                {showAimIndicator && mousePos && (
+                    <AimIndicator
+                        start={new Vector3(0, 0, 0)}
+                        end={new Vector3(0, 0, groupRef.current?.position.distanceTo(mousePos) || 0)}
+                    />
+                )}
+            </group>
+        </RigidBody>
     );
 }
